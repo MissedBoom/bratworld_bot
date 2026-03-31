@@ -42,10 +42,20 @@ def init_database() -> None:
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
                 balance INTEGER NOT NULL DEFAULT 0,
-                last_work INTEGER NOT NULL DEFAULT 0
+                last_work INTEGER NOT NULL DEFAULT 0,
+                last_gamble INTEGER NOT NULL DEFAULT 0
             )
             """
         )
+
+        cursor = conn.execute("PRAGMA table_info(users)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if "last_gamble" not in columns:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN last_gamble INTEGER NOT NULL DEFAULT 0"
+            )
+
         conn.commit()
 
 
@@ -299,6 +309,8 @@ async def leaderboard(interaction: discord.Interaction):
 # /gamble COMMAND
 # ---------------------------
 
+GAMBLE_COOLDOWN = 600  # 10 minutes in seconds
+
 GAMBLE_COST = 10_000
 
 GAMBLE_RESULTS = [
@@ -364,9 +376,28 @@ def update_user_balance(user_id: int, delta: int) -> int:
 @bot.tree.command(name="gamble", description="Spend 10,000 BRAT CASH to spin the casino wheel.")
 async def gamble(interaction: discord.Interaction):
     user_id = interaction.user.id
+    now = int(time.time())
 
     async with db_lock:
         balance, _ = get_user_data(user_id)
+        last_gamble = get_last_gamble(user_id)
+
+        elapsed = now - last_gamble
+        if elapsed < GAMBLE_COOLDOWN:
+            remaining = GAMBLE_COOLDOWN - elapsed
+
+            embed = discord.Embed(
+                title="🎰 Casino cooldown",
+                description=(
+                    f"You already used **/gamble** recently.\n"
+                    f"Come back in **{format_remaining_time(remaining)}** to spin again."
+                ),
+                color=0xED4245
+            )
+            embed.set_footer(text="Gamble cooldown is active.")
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
 
         if balance < GAMBLE_COST:
             missing = GAMBLE_COST - balance
@@ -392,7 +423,7 @@ async def gamble(interaction: discord.Interaction):
         )[0]
 
         net_change = result["payout"] - GAMBLE_COST
-        new_balance = update_user_balance(user_id, net_change)
+        new_balance = apply_gamble_result(user_id, net_change, now)
 
     if net_change > 0:
         outcome_text = f"+{net_change:,} BRAT CASH"
@@ -413,9 +444,44 @@ async def gamble(interaction: discord.Interaction):
     embed.add_field(name="Result", value=result["name"], inline=True)
     embed.add_field(name="Net Change", value=outcome_text, inline=True)
     embed.add_field(name="New Balance", value=f"{new_balance:,} BRAT CASH", inline=False)
-    embed.set_footer(text="More custom wheel outcomes can be added later.")
+    embed.set_footer(text=f"Use /gamble again in {GAMBLE_COOLDOWN // 60} minutes.")
 
     await interaction.response.send_message(embed=embed)
+
+def get_last_gamble(user_id: int) -> int:
+    ensure_user_exists(user_id)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.execute(
+            "SELECT last_gamble FROM users WHERE user_id = ?",
+            (user_id,)
+        )
+        row = cursor.fetchone()
+
+    return row[0] if row else 0
+
+
+def apply_gamble_result(user_id: int, net_change: int, timestamp: int) -> int:
+    ensure_user_exists(user_id)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            UPDATE users
+            SET balance = balance + ?, last_gamble = ?
+            WHERE user_id = ?
+            """,
+            (net_change, timestamp, user_id)
+        )
+
+        cursor = conn.execute(
+            "SELECT balance FROM users WHERE user_id = ?",
+            (user_id,)
+        )
+        new_balance = cursor.fetchone()[0]
+        conn.commit()
+
+    return new_balance
 
 # -----------------
 # /add & remove COMMAND
