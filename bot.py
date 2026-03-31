@@ -109,6 +109,30 @@ def get_top_users(limit: int = 10) -> list[tuple[int, int]]:
         )
         return cursor.fetchall()
 
+def get_user_rank(user_id: int) -> tuple[int, int]:
+    ensure_user_exists(user_id)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.execute(
+            "SELECT balance FROM users WHERE user_id = ?",
+            (user_id,)
+        )
+        row = cursor.fetchone()
+        balance = row[0] if row else 0
+
+        cursor = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM users
+            WHERE balance > ?
+               OR (balance = ? AND user_id < ?)
+            """,
+            (balance, balance, user_id)
+        )
+        rank = cursor.fetchone()[0] + 1
+
+    return rank, balance
+    
 def format_remaining_time(seconds: int) -> str:
     minutes, seconds = divmod(seconds, 60)
     return f"{minutes}m {seconds}s"
@@ -205,6 +229,7 @@ async def balance(interaction: discord.Interaction, member: discord.Member | Non
 async def leaderboard(interaction: discord.Interaction):
     async with db_lock:
         top_users = get_top_users(10)
+        requester_rank, requester_balance = get_user_rank(interaction.user.id)
 
     if not top_users:
         embed = discord.Embed(
@@ -216,9 +241,13 @@ async def leaderboard(interaction: discord.Interaction):
         return
 
     lines = []
+    requester_in_top_10 = False
 
     for index, (user_id, balance) in enumerate(top_users, start=1):
         username = f"User {user_id}"
+
+        if user_id == interaction.user.id:
+            requester_in_top_10 = True
 
         if interaction.guild:
             member = interaction.guild.get_member(user_id)
@@ -254,6 +283,14 @@ async def leaderboard(interaction: discord.Interaction):
         description="\n".join(lines),
         color=0xF1C40F
     )
+
+    if not requester_in_top_10:
+        embed.add_field(
+            name="Your Position",
+            value=f"**#{requester_rank}** — **{requester_balance:,} BRAT CASH**",
+            inline=False
+        )
+
     embed.set_footer(text=f"Requested by {interaction.user.display_name}")
 
     await interaction.response.send_message(embed=embed)
