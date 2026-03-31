@@ -294,5 +294,127 @@ async def leaderboard(interaction: discord.Interaction):
     embed.set_footer(text=f"Requested by {interaction.user.display_name}")
 
     await interaction.response.send_message(embed=embed)
+
+# ---------------------------
+# /gamble COMMAND
+# ---------------------------
+
+GAMBLE_COST = 10_000
+
+GAMBLE_RESULTS = [
+    {
+        "key": "bust",
+        "name": "BUST",
+        "chance": 45,
+        "payout": 0,
+        "message": "The wheel stopped on **BUST**. You lost your entire stake."
+    },
+    {
+        "key": "half_back",
+        "name": "HALF BACK",
+        "chance": 25,
+        "payout": 5_000,
+        "message": "The wheel gave you **HALF BACK**. Better than nothing."
+    },
+    {
+        "key": "break_even",
+        "name": "BREAK EVEN",
+        "chance": 15,
+        "payout": 10_000,
+        "message": "The wheel landed on **BREAK EVEN**. You got your stake back."
+    },
+    {
+        "key": "double",
+        "name": "DOUBLE UP",
+        "chance": 10,
+        "payout": 20_000,
+        "message": "The wheel hit **DOUBLE UP**. Clean profit."
+    },
+    {
+        "key": "jackpot",
+        "name": "JACKPOT",
+        "chance": 5,
+        "payout": 35_000,
+        "message": "The wheel exploded on **JACKPOT**. Massive win."
+    }
+]
+
+def update_user_balance(user_id: int, delta: int) -> int:
+    ensure_user_exists(user_id)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            UPDATE users
+            SET balance = balance + ?
+            WHERE user_id = ?
+            """,
+            (delta, user_id)
+        )
+
+        cursor = conn.execute(
+            "SELECT balance FROM users WHERE user_id = ?",
+            (user_id,)
+        )
+        new_balance = cursor.fetchone()[0]
+        conn.commit()
+
+    return new_balance
+
+@bot.tree.command(name="gamble", description="Spend 10,000 BRAT CASH to spin the casino wheel.")
+async def gamble(interaction: discord.Interaction):
+    user_id = interaction.user.id
+
+    async with db_lock:
+        balance, _ = get_user_data(user_id)
+
+        if balance < GAMBLE_COST:
+            missing = GAMBLE_COST - balance
+
+            embed = discord.Embed(
+                title="🎰 Not enough BRAT CASH",
+                description=(
+                    f"You need **{GAMBLE_COST:,} BRAT CASH** to use **/gamble**.\n"
+                    f"You are currently missing **{missing:,} BRAT CASH**."
+                ),
+                color=0xED4245
+            )
+            embed.add_field(name="Current Balance", value=f"{balance:,} BRAT CASH", inline=True)
+            embed.add_field(name="Required", value=f"{GAMBLE_COST:,} BRAT CASH", inline=True)
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        result = random.choices(
+            GAMBLE_RESULTS,
+            weights=[entry["chance"] for entry in GAMBLE_RESULTS],
+            k=1
+        )[0]
+
+        net_change = result["payout"] - GAMBLE_COST
+        new_balance = update_user_balance(user_id, net_change)
+
+    if net_change > 0:
+        outcome_text = f"+{net_change:,} BRAT CASH"
+        color = 0x57F287
+    elif net_change < 0:
+        outcome_text = f"-{abs(net_change):,} BRAT CASH"
+        color = 0xED4245
+    else:
+        outcome_text = "±0 BRAT CASH"
+        color = 0xFEE75C
+
+    embed = discord.Embed(
+        title="🎰 BRAT WORLD Casino",
+        description=result["message"],
+        color=color
+    )
+    embed.add_field(name="Stake", value=f"{GAMBLE_COST:,} BRAT CASH", inline=True)
+    embed.add_field(name="Result", value=result["name"], inline=True)
+    embed.add_field(name="Net Change", value=outcome_text, inline=True)
+    embed.add_field(name="New Balance", value=f"{new_balance:,} BRAT CASH", inline=False)
+    embed.set_footer(text="More custom wheel outcomes can be added later.")
+
+    await interaction.response.send_message(embed=embed)
     
 bot.run(TOKEN)
