@@ -218,8 +218,25 @@ async def leaderboard(interaction: discord.Interaction):
     lines = []
 
     for index, (user_id, balance) in enumerate(top_users, start=1):
-        member = interaction.guild.get_member(user_id) if interaction.guild else None
-        username = member.display_name if member else f"User {user_id}"
+        username = f"User {user_id}"
+
+        if interaction.guild:
+            member = interaction.guild.get_member(user_id)
+
+            if member is None:
+                try:
+                    member = await interaction.guild.fetch_member(user_id)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    member = None
+
+            if member is not None:
+                username = member.display_name
+            else:
+                try:
+                    user = await bot.fetch_user(user_id)
+                    username = user.display_name
+                except (discord.NotFound, discord.HTTPException):
+                    pass
 
         if index == 1:
             prefix = "🥇"
