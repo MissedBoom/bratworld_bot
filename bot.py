@@ -18,6 +18,11 @@ DB_PATH = os.path.join(DATA_DIR, "economy.db")
 
 db_lock = asyncio.Lock()
 
+
+# --------------------------------
+# /WORK COMMAND
+# --------------------------------
+
 WORK_MESSAGES = [
     "You pulled off a clean BRAT WORLD hustle and earned **{amount:,} BRAT CASH**.",
     "You cashed in on your brat energy and collected **{amount:,} BRAT CASH**.",
@@ -152,5 +157,32 @@ async def work(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
+# ----------------------
+# /balance COMMAND
+# ----------------------
+
+@bot.tree.command(name="balance", description="Check your BRAT CASH balance.")
+@discord.app_commands.describe(member="The member whose balance you want to check")
+async def balance(interaction: discord.Interaction, member: discord.Member | None = None):
+    target = member or interaction.user
+
+    async with db_lock:
+        user_balance, _ = get_user_data(target.id)
+
+    embed = discord.Embed(
+        title="💰 BRAT CASH Balance",
+        description=f"**{target.display_name}** currently has **{user_balance:,} BRAT CASH**.",
+        color=0x5865F2
+    )
+
+    if target.avatar:
+        embed.set_thumbnail(url=target.avatar.url)
+
+    if target == interaction.user:
+        embed.set_footer(text="Keep grinding with /work.")
+    else:
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+
+    await interaction.response.send_message(embed=embed)
 
 bot.run(TOKEN)
