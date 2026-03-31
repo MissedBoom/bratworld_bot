@@ -96,6 +96,18 @@ def apply_work_reward(user_id: int, amount: int, timestamp: int) -> int:
 
     return new_balance
 
+def get_top_users(limit: int = 10) -> list[tuple[int, int]]:
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.execute(
+            """
+            SELECT user_id, balance
+            FROM users
+            ORDER BY balance DESC, user_id ASC
+            LIMIT ?
+            """,
+            (limit,)
+        )
+        return cursor.fetchall()
 
 def format_remaining_time(seconds: int) -> str:
     minutes, seconds = divmod(seconds, 60)
@@ -185,4 +197,48 @@ async def balance(interaction: discord.Interaction, member: discord.Member | Non
 
     await interaction.response.send_message(embed=embed)
 
+# ---------------------
+# /leaderboard COMMAND
+# ---------------------
+
+@bot.tree.command(name="leaderboard", description="View the richest members in BRAT WORLD.")
+async def leaderboard(interaction: discord.Interaction):
+    async with db_lock:
+        top_users = get_top_users(10)
+
+    if not top_users:
+        embed = discord.Embed(
+            title="🏆 BRAT WORLD Leaderboard",
+            description="No one has earned any **BRAT CASH** yet.",
+            color=0xF1C40F
+        )
+        await interaction.response.send_message(embed=embed)
+        return
+
+    lines = []
+
+    for index, (user_id, balance) in enumerate(top_users, start=1):
+        member = interaction.guild.get_member(user_id) if interaction.guild else None
+        username = member.display_name if member else f"User {user_id}"
+
+        if index == 1:
+            prefix = "🥇"
+        elif index == 2:
+            prefix = "🥈"
+        elif index == 3:
+            prefix = "🥉"
+        else:
+            prefix = f"**{index}.**"
+
+        lines.append(f"{prefix} {username} — **{balance:,} BRAT CASH**")
+
+    embed = discord.Embed(
+        title="🏆 BRAT WORLD Leaderboard",
+        description="\n".join(lines),
+        color=0xF1C40F
+    )
+    embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+
+    await interaction.response.send_message(embed=embed)
+    
 bot.run(TOKEN)
