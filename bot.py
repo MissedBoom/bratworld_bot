@@ -416,5 +416,93 @@ async def gamble(interaction: discord.Interaction):
     embed.set_footer(text="More custom wheel outcomes can be added later.")
 
     await interaction.response.send_message(embed=embed)
+
+# -----------------
+# /add & remove COMMAND
+# -----------------
+
+@bot.tree.command(name="add", description="Add BRAT CASH to a member.")
+@discord.app_commands.checks.has_permissions(administrator=True)
+@discord.app_commands.describe(
+    member="The member who will receive BRAT CASH",
+    amount="The amount of BRAT CASH to add"
+)
+async def add(interaction: discord.Interaction, member: discord.Member, amount: int):
+    if amount <= 0:
+        await interaction.response.send_message(
+            "❌ Amount must be greater than 0.",
+            ephemeral=True
+        )
+        return
+
+    async with db_lock:
+        new_balance = update_user_balance(member.id, amount)
+
+    embed = discord.Embed(
+        title="➕ BRAT CASH Added",
+        description=f"Added **{amount:,} BRAT CASH** to **{member.display_name}**.",
+        color=0x57F287
+    )
+    embed.add_field(name="Member", value=member.mention, inline=True)
+    embed.add_field(name="New Balance", value=f"{new_balance:,} BRAT CASH", inline=True)
+    embed.set_footer(text=f"Action performed by {interaction.user.display_name}")
+
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="remove", description="Remove BRAT CASH from a member.")
+@discord.app_commands.checks.has_permissions(administrator=True)
+@discord.app_commands.describe(
+    member="The member who will lose BRAT CASH",
+    amount="The amount of BRAT CASH to remove"
+)
+async def remove(interaction: discord.Interaction, member: discord.Member, amount: int):
+    if amount <= 0:
+        await interaction.response.send_message(
+            "❌ Amount must be greater than 0.",
+            ephemeral=True
+        )
+        return
+
+    async with db_lock:
+        current_balance, _ = get_user_data(member.id)
+        removed_amount = min(amount, current_balance)
+        new_balance = update_user_balance(member.id, -removed_amount)
+
+    embed = discord.Embed(
+        title="➖ BRAT CASH Removed",
+        description=f"Removed **{removed_amount:,} BRAT CASH** from **{member.display_name}**.",
+        color=0xED4245
+    )
+    embed.add_field(name="Member", value=member.mention, inline=True)
+    embed.add_field(name="New Balance", value=f"{new_balance:,} BRAT CASH", inline=True)
+
+    if removed_amount < amount:
+        embed.add_field(
+            name="Note",
+            value="The requested amount was higher than the member's balance, so the balance was reduced to 0.",
+            inline=False
+        )
+
+    embed.set_footer(text=f"Action performed by {interaction.user.display_name}")
+
+    await interaction.response.send_message(embed=embed)
+
+@add.error
+async def add_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+    if isinstance(error, discord.app_commands.errors.MissingPermissions):
+        await interaction.response.send_message(
+            "❌ You must be an administrator to use this command.",
+            ephemeral=True
+        )
+
+
+@remove.error
+async def remove_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+    if isinstance(error, discord.app_commands.errors.MissingPermissions):
+        await interaction.response.send_message(
+            "❌ You must be an administrator to use this command.",
+            ephemeral=True
+        )
     
 bot.run(TOKEN)
