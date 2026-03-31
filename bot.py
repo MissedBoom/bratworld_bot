@@ -310,7 +310,7 @@ async def leaderboard(interaction: discord.Interaction):
 # ---------------------------
 
 GAMBLE_COST = 10_000
-GAMBLE_COOLDOWN = 600  # 10 minutes in seconds
+GAMBLE_COOLDOWN = 300  # 5 minutes in seconds
 
 SPIN_WINDOW_SIZE = 5
 SPIN_DELAYS = [0.18, 0.18, 0.22, 0.26, 0.32, 0.40, 0.52, 0.68, 0.90]
