@@ -309,9 +309,11 @@ async def leaderboard(interaction: discord.Interaction):
 # /gamble COMMAND
 # ---------------------------
 
+GAMBLE_COST = 10_000
 GAMBLE_COOLDOWN = 600  # 10 minutes in seconds
 
-GAMBLE_COST = 10_000
+SPIN_WINDOW_SIZE = 5
+SPIN_DELAYS = [0.18, 0.18, 0.22, 0.26, 0.32, 0.40, 0.52, 0.68, 0.90]
 
 GAMBLE_RESULTS = [
     {
@@ -425,6 +427,30 @@ async def gamble(interaction: discord.Interaction):
         net_change = result["payout"] - GAMBLE_COST
         new_balance = apply_gamble_result(user_id, net_change, now)
 
+    await interaction.response.defer()
+
+    spin_windows = generate_spin_windows(result["name"])
+
+    for index, (window, delay) in enumerate(zip(spin_windows, SPIN_DELAYS), start=1):
+        embed = discord.Embed(
+            title="🎰 BRAT WORLD Casino",
+            description=(
+                "**Spinning the wheel...**\n\n"
+                f"{build_spin_line(window)}"
+            ),
+            color=0xFEE75C
+        )
+
+        if index < len(SPIN_DELAYS) // 2:
+            embed.set_footer(text="The wheel is spinning fast...")
+        else:
+            embed.set_footer(text="The wheel is slowing down...")
+
+        await interaction.edit_original_response(embed=embed)
+        await asyncio.sleep(delay)
+
+    final_window = spin_windows[-1]
+
     if net_change > 0:
         outcome_text = f"+{net_change:,} BRAT CASH"
         color = 0x57F287
@@ -435,18 +461,22 @@ async def gamble(interaction: discord.Interaction):
         outcome_text = "±0 BRAT CASH"
         color = 0xFEE75C
 
-    embed = discord.Embed(
+    final_embed = discord.Embed(
         title="🎰 BRAT WORLD Casino",
-        description=result["message"],
+        description=(
+            f"**The wheel stops on {result['name']}!**\n\n"
+            f"{build_spin_line(final_window)}\n\n"
+            f"{result['message']}"
+        ),
         color=color
     )
-    embed.add_field(name="Stake", value=f"{GAMBLE_COST:,} BRAT CASH", inline=True)
-    embed.add_field(name="Result", value=result["name"], inline=True)
-    embed.add_field(name="Net Change", value=outcome_text, inline=True)
-    embed.add_field(name="New Balance", value=f"{new_balance:,} BRAT CASH", inline=False)
-    embed.set_footer(text=f"Use /gamble again in {GAMBLE_COOLDOWN // 60} minutes.")
+    final_embed.add_field(name="Stake", value=f"{GAMBLE_COST:,} BRAT CASH", inline=True)
+    final_embed.add_field(name="Result", value=result["name"], inline=True)
+    final_embed.add_field(name="Net Change", value=outcome_text, inline=True)
+    final_embed.add_field(name="New Balance", value=f"{new_balance:,} BRAT CASH", inline=False)
+    final_embed.set_footer(text=f"Use /gamble again in {GAMBLE_COOLDOWN // 60} minutes.")
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.edit_original_response(embed=final_embed)
 
 def get_last_gamble(user_id: int) -> int:
     ensure_user_exists(user_id)
@@ -482,6 +512,38 @@ def apply_gamble_result(user_id: int, net_change: int, timestamp: int) -> int:
         conn.commit()
 
     return new_balance
+
+
+def build_spin_line(window: list[str]) -> str:
+    center_index = len(window) // 2
+    parts = []
+
+    for index, label in enumerate(window):
+        if index == center_index:
+            parts.append(f"**【 {label} 】**")
+        else:
+            parts.append(f"`{label}`")
+
+    return "  ".join(parts)
+
+
+def generate_spin_windows(final_result_name: str) -> list[list[str]]:
+    pool = [entry["name"] for entry in GAMBLE_RESULTS]
+    total_frames = len(SPIN_DELAYS)
+
+    sequence = [
+        random.choice(pool)
+        for _ in range(total_frames + SPIN_WINDOW_SIZE)
+    ]
+
+    final_center_index = (total_frames - 1) + (SPIN_WINDOW_SIZE // 2)
+    sequence[final_center_index] = final_result_name
+
+    windows = []
+    for i in range(total_frames):
+        windows.append(sequence[i:i + SPIN_WINDOW_SIZE])
+
+    return windows
 
 # -----------------
 # /add & remove COMMAND
