@@ -337,8 +337,8 @@ GAMBLE_RESULTS = [
         "payout": 5_000,
         "message_lines": [
             "*You've been winning a lot lately. Tonight was your lucky night ! You were about to spin the wheel again and a pretty girl in front of you caught your eyes and slowly licked her lips, making you throbb instantly*",
-            '**"You should be focused on your bet silly, or one day, someone will steal it all~ "**'
-            "*You look down on the machine and some of your BRAT CASH disappeared.*"
+            '**"You should be focused on your bet silly, or one day, someone will steal it all~ "**',
+            "*You look down on the machine and some of your BRAT CASH disappeared.*",
             "The wheel landed on **SO CLOSE**.",
             "You got part of your stake back.",
         ],
