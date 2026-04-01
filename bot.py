@@ -467,7 +467,7 @@ async def gamble(interaction: discord.Interaction):
         await interaction.edit_original_response(embed=embed)
         await asyncio.sleep(delay)
 
-            final_window = spin_windows[-1]
+    final_window = spin_windows[-1]
 
     if net_change > 0:
         outcome_text = f"+{net_change:,} BRAT CASH"
