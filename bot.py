@@ -317,41 +317,62 @@ SPIN_DELAYS = [0.18, 0.18, 0.22, 0.26, 0.32, 0.40, 0.52, 0.68, 0.90]
 
 GAMBLE_RESULTS = [
     {
-        "key": "bust",
-        "name": "BUST",
-        "chance": 45,
-        "payout": 0,
-        "message": "The wheel stopped on **BUST**. You lost your entire stake."
-    },
-    {
-        "key": "half_back",
-        "name": "HALF BACK",
+        "key": "loser",
+        "name": "LOSER",
         "chance": 25,
+        "payout": 0,
+        "message_lines": [
+            "*You've been focusing on the the wheel but a gentle girl came next to you, teased her beautiful cleavage and you were staring at her curves like a dumb boy already~*",
+            "**'Shhh that's it, no need to win when I'm around~'**",
+            "*You realize you lost all your BRAT CASH but it didn't matter, a hot brat like her deserved it anyway...*",
+            "The wheel stopped on **LOSER**.",
+            "You lost your entire stake.",
+        ],
+        "image_url": "PUT_YOUR_GIF_OR_IMAGE_URL_HERE"
+    },
+    {
+        "key": "so_close",
+        "name": "SO CLOSE",
+        "chance": 30,
         "payout": 5_000,
-        "message": "The wheel gave you **HALF BACK**. Better than nothing."
+        "message_lines": [
+            "*You've been winning a lot lately. Tonight was your lucky night ! You were about to spin the wheel again and a pretty girl in front of you caught your eyes and slowly licked her lips, making you throbb instantly*",
+            '**"You should be focused on your bet silly, or one day, someone will steal it all~ "**'
+            "*You look down on the machine and some of your BRAT CASH disappeared.*"
+            "The wheel landed on **SO CLOSE**.",
+            "You got part of your stake back.",
+        ],
+        "image_url": "PUT_YOUR_GIF_OR_IMAGE_URL_HERE"
     },
     {
-        "key": "break_even",
-        "name": "BREAK EVEN",
-        "chance": 15,
+        "key": "back_at_you",
+        "name": "BACK AT YOU",
+        "chance": 25,
         "payout": 10_000,
-        "message": "The wheel landed on **BREAK EVEN**. You got your stake back."
+        "message_lines": [],
+        "image_url": "PUT_YOUR_GIF_OR_IMAGE_URL_HERE"
     },
     {
-        "key": "double",
+        "key": "double_up",
         "name": "DOUBLE UP",
-        "chance": 10,
+        "chance": 15,
         "payout": 20_000,
-        "message": "The wheel hit **DOUBLE UP**. Clean profit."
+        "message_lines": [],
+        "image_url": "PUT_YOUR_GIF_OR_IMAGE_URL_HERE"
     },
     {
         "key": "jackpot",
         "name": "JACKPOT",
         "chance": 5,
         "payout": 35_000,
-        "message": "The wheel exploded on **JACKPOT**. Massive win."
+        "message_lines": [],
+        "image_url": "PUT_YOUR_GIF_OR_IMAGE_URL_HERE"
     }
 ]
+
+def build_gamble_result_text(result: dict) -> str:
+    lines = result.get("message_lines", [])
+    return "\n".join(lines).strip()
 
 def update_user_balance(user_id: int, delta: int) -> int:
     ensure_user_exists(user_id)
@@ -461,13 +482,21 @@ async def gamble(interaction: discord.Interaction):
         outcome_text = "±0 BRAT CASH"
         color = 0xFEE75C
 
-    final_embed = discord.Embed(
-        title="🎰 BRAT WORLD Casino",
-        description=(
-            f"**The wheel stops on {result['name']}!**\n\n"
-            f"{build_spin_line(final_window)}\n\n"
-            f"{result['message']}"
-        ),
+    result_text = build_gamble_result_text(result)
+
+description = (
+    f"**The wheel stops on {result['name']}!**\n\n"
+    f"{build_spin_line(final_window)}"
+)
+
+if result_text:
+    description += f"\n\n{result_text}"
+
+final_embed = discord.Embed(
+    title="🎰 BRAT WORLD Casino",
+    description=description,
+    color=color
+),
         color=color
     )
     final_embed.add_field(name="Stake", value=f"{GAMBLE_COST:,} BRAT CASH", inline=True)
@@ -475,6 +504,9 @@ async def gamble(interaction: discord.Interaction):
     final_embed.add_field(name="Net Change", value=outcome_text, inline=True)
     final_embed.add_field(name="New Balance", value=f"{new_balance:,} BRAT CASH", inline=False)
     final_embed.set_footer(text=f"Use /gamble again in {GAMBLE_COOLDOWN // 60} minutes.")
+
+    if result.get("image_url"):
+    final_embed.set_image(url=result["image_url"])
 
     await interaction.edit_original_response(embed=final_embed)
 
