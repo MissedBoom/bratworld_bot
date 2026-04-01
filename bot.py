@@ -670,5 +670,288 @@ async def remove_error(interaction: discord.Interaction, error: discord.app_comm
             "❌ You must be an administrator to use this command.",
             ephemeral=True
         )
+
+# --------------------
+# /give & request COMMAND
+# --------------------
+
+def transfer_brat_cash(from_user_id: int, to_user_id: int, amount: int) -> tuple[bool, int, int]:
+    if amount <= 0:
+        return False, 0, 0
+
+    ensure_user_exists(from_user_id)
+    ensure_user_exists(to_user_id)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.execute(
+            "SELECT balance FROM users WHERE user_id = ?",
+            (from_user_id,)
+        )
+        from_balance = cursor.fetchone()[0]
+
+        if from_balance < amount:
+            cursor = conn.execute(
+                "SELECT balance FROM users WHERE user_id = ?",
+                (to_user_id,)
+            )
+            to_balance = cursor.fetchone()[0]
+            return False, from_balance, to_balance
+
+        conn.execute(
+            "UPDATE users SET balance = balance - ? WHERE user_id = ?",
+            (amount, from_user_id)
+        )
+        conn.execute(
+            "UPDATE users SET balance = balance + ? WHERE user_id = ?",
+            (amount, to_user_id)
+        )
+
+        cursor = conn.execute(
+            "SELECT balance FROM users WHERE user_id = ?",
+            (from_user_id,)
+        )
+        new_from_balance = cursor.fetchone()[0]
+
+        cursor = conn.execute(
+            "SELECT balance FROM users WHERE user_id = ?",
+            (to_user_id,)
+        )
+        new_to_balance = cursor.fetchone()[0]
+
+        conn.commit()
+
+    return True, new_from_balance, new_to_balance
+
+class BratCashRequestView(discord.ui.View):
+    def __init__(self, requester: discord.Member, target: discord.Member, amount: int):
+        super().__init__(timeout=300)
+        self.requester = requester
+        self.target = target
+        self.amount = amount
+        self.message = None
+        self.completed = False
+
+    def build_pending_embed(self) -> discord.Embed:
+        embed = discord.Embed(
+            title="💸 BRAT CASH Request",
+            description=(
+                f"{self.requester.mention} is requesting **{self.amount:,} BRAT CASH** from {self.target.mention}.\n\n"
+                f"{self.target.mention}, do you want to accept this request?"
+            ),
+            color=0x5865F2
+        )
+        embed.set_footer(text="Only the requested member can use these buttons.")
+        return embed
+
+    @discord.ui.button(label="Accept", style=discord.ButtonStyle.success, emoji="✅")
+    async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.target.id:
+            await interaction.response.send_message(
+                "❌ Only the requested member can accept this request.",
+                ephemeral=True
+            )
+            return
+
+        if self.completed:
+            await interaction.response.send_message(
+                "❌ This request has already been handled.",
+                ephemeral=True
+            )
+            return
+
+        async with db_lock:
+            success, new_target_balance, new_requester_balance = transfer_brat_cash(
+                self.target.id,
+                self.requester.id,
+                self.amount
+            )
+
+        self.completed = True
+        for item in self.children:
+            item.disabled = True
+
+        if success:
+            embed = discord.Embed(
+                title="✅ Request Accepted",
+                description=(
+                    f"{self.target.mention} sent **{self.amount:,} BRAT CASH** to {self.requester.mention}."
+                ),
+                color=0x57F287
+            )
+            embed.add_field(
+                name=f"{self.target.display_name}'s New Balance",
+                value=f"{new_target_balance:,} BRAT CASH",
+                inline=True
+            )
+            embed.add_field(
+                name=f"{self.requester.display_name}'s New Balance",
+                value=f"{new_requester_balance:,} BRAT CASH",
+                inline=True
+            )
+        else:
+            embed = discord.Embed(
+                title="❌ Request Failed",
+                description=(
+                    f"{self.target.mention} tried to accept the request, but does not have enough **BRAT CASH**."
+                ),
+                color=0xED4245
+            )
+            embed.add_field(
+                name="Current Balance",
+                value=f"{new_target_balance:,} BRAT CASH",
+                inline=True
+            )
+            embed.add_field(
+                name="Requested Amount",
+                value=f"{self.amount:,} BRAT CASH",
+                inline=True
+            )
+
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger, emoji="❌")
+    async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.target.id:
+            await interaction.response.send_message(
+                "❌ Only the requested member can decline this request.",
+                ephemeral=True
+            )
+            return
+
+        if self.completed:
+            await interaction.response.send_message(
+                "❌ This request has already been handled.",
+                ephemeral=True
+            )
+            return
+
+        self.completed = True
+        for item in self.children:
+            item.disabled = True
+
+        embed = discord.Embed(
+            title="❌ Request Declined",
+            description=(
+                f"{self.target.mention} declined the **{self.amount:,} BRAT CASH** request from {self.requester.mention}."
+            ),
+            color=0xED4245
+        )
+
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def on_timeout(self):
+        if self.completed:
+            return
+
+        for item in self.children:
+            item.disabled = True
+
+        embed = discord.Embed(
+            title="⌛ Request Expired",
+            description=(
+                f"The **{self.amount:,} BRAT CASH** request from {self.requester.mention} to {self.target.mention} has expired."
+            ),
+            color=0xFEE75C
+        )
+
+        if self.message:
+            try:
+                await self.message.edit(embed=embed, view=self)
+            except discord.HTTPException:
+                pass
+
+@bot.tree.command(name="give", description="Give BRAT CASH to another member.")
+@discord.app_commands.describe(
+    member="The member you want to give BRAT CASH to",
+    amount="The amount of BRAT CASH to give"
+)
+async def give(interaction: discord.Interaction, member: discord.Member, amount: int):
+    if amount <= 0:
+        await interaction.response.send_message(
+            "❌ Amount must be greater than 0.",
+            ephemeral=True
+        )
+        return
+
+    if member.id == interaction.user.id:
+        await interaction.response.send_message(
+            "❌ You cannot give BRAT CASH to yourself.",
+            ephemeral=True
+        )
+        return
+
+    if member.bot:
+        await interaction.response.send_message(
+            "❌ You cannot give BRAT CASH to a bot.",
+            ephemeral=True
+        )
+        return
+
+    async with db_lock:
+        success, new_sender_balance, new_receiver_balance = transfer_brat_cash(
+            interaction.user.id,
+            member.id,
+            amount
+        )
+
+    if not success:
+        embed = discord.Embed(
+            title="❌ Not enough BRAT CASH",
+            description=(
+                f"You tried to give **{amount:,} BRAT CASH**, but you do not have enough."
+            ),
+            color=0xED4245
+        )
+        embed.add_field(name="Your Balance", value=f"{new_sender_balance:,} BRAT CASH", inline=True)
+        embed.add_field(name="Required", value=f"{amount:,} BRAT CASH", inline=True)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title="💸 BRAT CASH Sent",
+        description=(
+            f"{interaction.user.mention} gave **{amount:,} BRAT CASH** to {member.mention}."
+        ),
+        color=0x57F287
+    )
+    embed.add_field(name="Your New Balance", value=f"{new_sender_balance:,} BRAT CASH", inline=True)
+    embed.add_field(name=f"{member.display_name}'s New Balance", value=f"{new_receiver_balance:,} BRAT CASH", inline=True)
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="request", description="Request BRAT CASH from another member.")
+@discord.app_commands.describe(
+    member="The member you want to request BRAT CASH from",
+    amount="The amount of BRAT CASH you want to request"
+)
+async def request(interaction: discord.Interaction, member: discord.Member, amount: int):
+    if amount <= 0:
+        await interaction.response.send_message(
+            "❌ Amount must be greater than 0.",
+            ephemeral=True
+        )
+        return
+
+    if member.id == interaction.user.id:
+        await interaction.response.send_message(
+            "❌ You cannot request BRAT CASH from yourself.",
+            ephemeral=True
+        )
+        return
+
+    if member.bot:
+        await interaction.response.send_message(
+            "❌ You cannot request BRAT CASH from a bot.",
+            ephemeral=True
+        )
+        return
+
+    view = BratCashRequestView(interaction.user, member, amount)
+    await interaction.response.send_message(
+        embed=view.build_pending_embed(),
+        view=view
+    )
+    view.message = await interaction.original_response()
     
 bot.run(TOKEN)
