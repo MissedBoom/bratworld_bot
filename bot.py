@@ -328,7 +328,7 @@ GAMBLE_RESULTS = [
             "The wheel stopped on **LOSER**.",
             "You lost your entire stake.",
         ],
-        "image_url": "PUT_YOUR_GIF_OR_IMAGE_URL_HERE"
+        "image_file": "loser.gif"
     },
     {
         "key": "so_close",
@@ -342,7 +342,7 @@ GAMBLE_RESULTS = [
             "The wheel landed on **SO CLOSE**.",
             "You got part of your stake back.",
         ],
-        "image_url": "PUT_YOUR_GIF_OR_IMAGE_URL_HERE"
+        "image_file": "so_close.gif"
     },
     {
         "key": "back_at_you",
@@ -350,7 +350,6 @@ GAMBLE_RESULTS = [
         "chance": 25,
         "payout": 10_000,
         "message_lines": [],
-        "image_url": "PUT_YOUR_GIF_OR_IMAGE_URL_HERE"
     },
     {
         "key": "double_up",
@@ -358,7 +357,6 @@ GAMBLE_RESULTS = [
         "chance": 15,
         "payout": 20_000,
         "message_lines": [],
-        "image_url": "PUT_YOUR_GIF_OR_IMAGE_URL_HERE"
     },
     {
         "key": "jackpot",
@@ -366,7 +364,6 @@ GAMBLE_RESULTS = [
         "chance": 5,
         "payout": 35_000,
         "message_lines": [],
-        "image_url": "PUT_YOUR_GIF_OR_IMAGE_URL_HERE"
     }
 ]
 
@@ -470,7 +467,7 @@ async def gamble(interaction: discord.Interaction):
         await interaction.edit_original_response(embed=embed)
         await asyncio.sleep(delay)
 
-        final_window = spin_windows[-1]
+            final_window = spin_windows[-1]
 
     if net_change > 0:
         outcome_text = f"+{net_change:,} BRAT CASH"
@@ -504,10 +501,20 @@ async def gamble(interaction: discord.Interaction):
     final_embed.add_field(name="New Balance", value=f"{new_balance:,} BRAT CASH", inline=False)
     final_embed.set_footer(text=f"Use /gamble again in {GAMBLE_COOLDOWN // 60} minutes.")
 
-    if result.get("image_url"):
-        final_embed.set_image(url=result["image_url"])
+    attachment_file = None
 
-    await interaction.edit_original_response(embed=final_embed)
+    if result.get("image_file"):
+        filename = result["image_file"]
+        attachment_file = discord.File(f"assets/{filename}", filename=filename)
+        final_embed.set_image(url=f"attachment://{filename}")
+
+    if attachment_file:
+        await interaction.edit_original_response(
+            embed=final_embed,
+            attachments=[attachment_file]
+        )
+    else:
+        await interaction.edit_original_response(embed=final_embed)
 
 def get_last_gamble(user_id: int) -> int:
     ensure_user_exists(user_id)
