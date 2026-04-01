@@ -470,7 +470,7 @@ async def gamble(interaction: discord.Interaction):
         await interaction.edit_original_response(embed=embed)
         await asyncio.sleep(delay)
 
-    final_window = spin_windows[-1]
+        final_window = spin_windows[-1]
 
     if net_change > 0:
         outcome_text = f"+{net_change:,} BRAT CASH"
@@ -484,21 +484,20 @@ async def gamble(interaction: discord.Interaction):
 
     result_text = build_gamble_result_text(result)
 
-description = (
-    f"**The wheel stops on {result['name']}!**\n\n"
-    f"{build_spin_line(final_window)}"
-)
+    description = (
+        f"**The wheel stops on {result['name']}!**\n\n"
+        f"{build_spin_line(final_window)}"
+    )
 
-if result_text:
-    description += f"\n\n{result_text}"
+    if result_text:
+        description += f"\n\n{result_text}"
 
-final_embed = discord.Embed(
-    title="🎰 BRAT WORLD Casino",
-    description=description,
-    color=color
-),
+    final_embed = discord.Embed(
+        title="🎰 BRAT WORLD Casino",
+        description=description,
         color=color
     )
+
     final_embed.add_field(name="Stake", value=f"{GAMBLE_COST:,} BRAT CASH", inline=True)
     final_embed.add_field(name="Result", value=result["name"], inline=True)
     final_embed.add_field(name="Net Change", value=outcome_text, inline=True)
@@ -506,7 +505,7 @@ final_embed = discord.Embed(
     final_embed.set_footer(text=f"Use /gamble again in {GAMBLE_COOLDOWN // 60} minutes.")
 
     if result.get("image_url"):
-    final_embed.set_image(url=result["image_url"])
+        final_embed.set_image(url=result["image_url"])
 
     await interaction.edit_original_response(embed=final_embed)
 
