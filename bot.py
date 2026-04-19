@@ -953,5 +953,56 @@ async def request(interaction: discord.Interaction, member: discord.Member, amou
         view=view
     )
     view.message = await interaction.original_response()
-    
+
+
+ANNOUNCEMENTS_CHANNEL = "server-announcement"
+
+@bot.tree.command(name="announcement", description="[Admin] Post a styled announcement in the announcement channel.")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(
+    title="The announcement title",
+    message="The main announcement text"
+)
+async def announcement(interaction: discord.Interaction, title: str, message: str):
+    channel = discord.utils.get(interaction.guild.text_channels, name=ANNOUNCEMENTS_CHANNEL)
+
+    if not channel:
+        await interaction.response.send_message(
+            f"❌ Channel `#{ANNOUNCEMENTS_CHANNEL}` not found.",
+            ephemeral=True
+        )
+        return
+
+    embed = discord.Embed(
+        title=f"✨ {title}",
+        description=(
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"{message}\n\n"
+            "━━━━━━━━━━━━━━━━━━"
+        ),
+        color=0xF1C40F
+    )
+    embed.set_author(
+        name=f"{interaction.guild.name} Announcement",
+        icon_url=interaction.guild.icon.url if interaction.guild.icon else None
+    )
+    embed.set_footer(text=f"Posted by {interaction.user.display_name}")
+    embed.timestamp = discord.utils.utcnow()
+
+    await channel.send(embed=embed)
+
+    await interaction.response.send_message(
+        f"✅ Announcement posted in {channel.mention}.",
+        ephemeral=True
+    )
+
+
+@announcement.error
+async def announcement_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.errors.MissingPermissions):
+        await interaction.response.send_message(
+            "❌ You must be an administrator to use this command.",
+            ephemeral=True
+        )
+        
 bot.run(TOKEN)
