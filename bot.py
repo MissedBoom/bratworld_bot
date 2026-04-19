@@ -954,6 +954,11 @@ async def request(interaction: discord.Interaction, member: discord.Member, amou
     )
     view.message = await interaction.original_response()
 
+# ---------------------------------
+# ANNOUNCEMENTS
+# ---------------------------------
+
+from discord import app_commands
 
 ANNOUNCEMENTS_CHANNEL = "server-announcement"
 
