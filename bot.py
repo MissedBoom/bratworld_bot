@@ -962,13 +962,251 @@ from discord import app_commands
 
 ANNOUNCEMENTS_CHANNEL = "server-announcement"
 
-@bot.tree.command(name="announcement", description="[Admin] Post a styled announcement in the announcement channel.")
+def build_announcement_embed(
+    guild: discord.Guild,
+    author: discord.Member,
+    title_text: str,
+    body_text: str,
+    preview: bool = False
+) -> discord.Embed:
+    embed = discord.Embed(
+        title=f"✨ {title_text}",
+        description=(
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"{body_text}\n\n"
+            "━━━━━━━━━━━━━━━━━━"
+        ),
+        color=0xF1C40F if not preview else 0x5865F2
+    )
+
+    embed.set_author(
+        name=f"{guild.name} {'Announcement Preview' if preview else 'Announcement'}",
+        icon_url=guild.icon.url if guild.icon else None
+    )
+
+    if preview:
+        embed.set_footer(text=f"Preview • Only you can see this • By {author.display_name}")
+    else:
+        embed.set_footer(text=f"Posted by {author.display_name}")
+        embed.timestamp = discord.utils.utcnow()
+
+    return embed
+
+class AnnouncementModal(discord.ui.Modal, title="Create Announcement"):
+    announcement_title = discord.ui.TextInput(
+        label="Announcement Title",
+        placeholder="Type the announcement title here...",
+        max_length=100,
+        required=True
+    )
+
+    announcement_body = discord.ui.TextInput(
+        label="Announcement Text",
+        placeholder="Type the announcement message here...",
+        style=discord.TextStyle.paragraph,
+        max_length=2000,
+        required=True
+    )
+
+    def __init__(self, admin_id: int, channel_id: int, default_title: str = "", default_body: str = ""):
+        super().__init__()
+        self.admin_id = admin_id
+        self.channel_id = channel_id
+        self.announcement_title.default = default_title
+        self.announcement_body.default = default_body
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.admin_id:
+            await interaction.response.send_message(
+                "❌ Only the admin who opened this form can use it.",
+                ephemeral=True
+            )
+            return
+
+        title_text = str(self.announcement_title.value).strip()
+        body_text = str(self.announcement_body.value).strip()
+
+        preview_embed = build_announcement_embed(
+            guild=interaction.guild,
+            author=interaction.user,
+            title_text=title_text,
+            body_text=body_text,
+            preview=True
+        )
+
+        target_channel = interaction.guild.get_channel(self.channel_id)
+        if target_channel:
+            preview_embed.add_field(
+                name="Destination Channel",
+                value=target_channel.mention,
+                inline=False
+            )
+
+        view = AnnouncementPreviewView(
+            admin_id=self.admin_id,
+            channel_id=self.channel_id,
+            title_text=title_text,
+            body_text=body_text
+        )
+
+        await interaction.response.send_message(
+            embed=preview_embed,
+            view=view,
+            ephemeral=True
+        )
+
+        view.message = await interaction.original_response()
+
+class AnnouncementPreviewView(discord.ui.View):
+    def __init__(self, admin_id: int, channel_id: int, title_text: str, body_text: str):
+        super().__init__(timeout=900)
+        self.admin_id = admin_id
+        self.channel_id = channel_id
+        self.title_text = title_text
+        self.body_text = body_text
+        self.message = None
+        self.completed = False
+        self.stale = False
+
+    def disable_all_buttons(self):
+        for item in self.children:
+            item.disabled = True
+
+    @discord.ui.button(label="Post", style=discord.ButtonStyle.success, emoji="✅")
+    async def post(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.admin_id:
+            await interaction.response.send_message(
+                "❌ Only the admin who created this preview can post it.",
+                ephemeral=True
+            )
+            return
+
+        if self.completed:
+            await interaction.response.send_message(
+                "❌ This announcement preview has already been handled.",
+                ephemeral=True
+            )
+            return
+
+        if self.stale:
+            await interaction.response.send_message(
+                "❌ This preview is outdated. Use the newest preview instead.",
+                ephemeral=True
+            )
+            return
+
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel:
+            await interaction.response.send_message(
+                f"❌ Channel `#{ANNOUNCEMENTS_CHANNEL}` not found.",
+                ephemeral=True
+            )
+            return
+
+        final_embed = build_announcement_embed(
+            guild=interaction.guild,
+            author=interaction.user,
+            title_text=self.title_text,
+            body_text=self.body_text,
+            preview=False
+        )
+
+        await channel.send(embed=final_embed)
+
+        self.completed = True
+        self.disable_all_buttons()
+
+        confirmation_embed = build_announcement_embed(
+            guild=interaction.guild,
+            author=interaction.user,
+            title_text=self.title_text,
+            body_text=self.body_text,
+            preview=True
+        )
+        confirmation_embed.color = 0x57F287
+        confirmation_embed.add_field(
+            name="Status",
+            value=f"✅ Posted successfully in {channel.mention}",
+            inline=False
+        )
+
+        await interaction.response.edit_message(embed=confirmation_embed, view=self)
+
+    @discord.ui.button(label="Edit", style=discord.ButtonStyle.secondary, emoji="✏️")
+    async def edit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.admin_id:
+            await interaction.response.send_message(
+                "❌ Only the admin who created this preview can edit it.",
+                ephemeral=True
+            )
+            return
+
+        if self.completed:
+            await interaction.response.send_message(
+                "❌ This announcement preview has already been handled.",
+                ephemeral=True
+            )
+            return
+
+        self.stale = True
+
+        modal = AnnouncementModal(
+            admin_id=self.admin_id,
+            channel_id=self.channel_id,
+            default_title=self.title_text,
+            default_body=self.body_text
+        )
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.admin_id:
+            await interaction.response.send_message(
+                "❌ Only the admin who created this preview can cancel it.",
+                ephemeral=True
+            )
+            return
+
+        if self.completed:
+            await interaction.response.send_message(
+                "❌ This announcement preview has already been handled.",
+                ephemeral=True
+            )
+            return
+
+        self.completed = True
+        self.disable_all_buttons()
+
+        embed = discord.Embed(
+            title="❌ Announcement Cancelled",
+            description="This announcement will not be posted.",
+            color=0xED4245
+        )
+        embed.set_footer(text=f"Cancelled by {interaction.user.display_name}")
+
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def on_timeout(self):
+        if self.completed:
+            return
+
+        self.disable_all_buttons()
+
+        embed = discord.Embed(
+            title="⌛ Preview Expired",
+            description="This announcement preview has expired. Run `/announcement` again.",
+            color=0xFEE75C
+        )
+
+        if self.message:
+            try:
+                await self.message.edit(embed=embed, view=self)
+            except discord.HTTPException:
+                pass
+
+@bot.tree.command(name="announcement", description="[Admin] Create and preview an announcement before posting it.")
 @app_commands.checks.has_permissions(administrator=True)
-@app_commands.describe(
-    title="The announcement title",
-    message="The main announcement text"
-)
-async def announcement(interaction: discord.Interaction, title: str, message: str):
+async def announcement(interaction: discord.Interaction):
     channel = discord.utils.get(interaction.guild.text_channels, name=ANNOUNCEMENTS_CHANNEL)
 
     if not channel:
@@ -978,29 +1216,11 @@ async def announcement(interaction: discord.Interaction, title: str, message: st
         )
         return
 
-    embed = discord.Embed(
-        title=f"✨ {title}",
-        description=(
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"{message}\n\n"
-            "━━━━━━━━━━━━━━━━━━"
-        ),
-        color=0xF1C40F
+    modal = AnnouncementModal(
+        admin_id=interaction.user.id,
+        channel_id=channel.id
     )
-    embed.set_author(
-        name=f"{interaction.guild.name} Announcement",
-        icon_url=interaction.guild.icon.url if interaction.guild.icon else None
-    )
-    embed.set_footer(text=f"Posted by {interaction.user.display_name}")
-    embed.timestamp = discord.utils.utcnow()
-
-    await channel.send(embed=embed)
-
-    await interaction.response.send_message(
-        f"✅ Announcement posted in {channel.mention}.",
-        ephemeral=True
-    )
-
+    await interaction.response.send_modal(modal)
 
 @announcement.error
 async def announcement_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
