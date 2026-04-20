@@ -1250,6 +1250,14 @@ IDLE_CHANNEL_MESSAGES = {
         "👑Welcome to the Perfect Brats place 👑\n"
         "Show us your favorite girls to goon to 🥵\n"
         "Make everyone here a total simp~"
+    ),
+    "left-or-right": (
+        "💗Welcome to the left or right challenge room 💗\n"
+        "Give us a nice dilemna for us to choose between two girls~"
+    ),
+    "would-you-rather": (
+        "❔Welcome to the would you rather challenge room ❔\n"
+        "Let's hear your craziest dilemna of scenario and let people vote for it !"
     )
 }
 
