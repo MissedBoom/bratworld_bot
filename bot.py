@@ -160,6 +160,9 @@ async def setup_hook():
     print(f"✅ {len(synced)} slash commands synced")
     for cmd in synced:
         print(f"  - /{cmd.name}")
+        
+    asyncio.create_task(start_idle_system())
+
 
 
 @bot.tree.command(name="work", description="Earn BRAT CASH.")
@@ -1229,5 +1232,84 @@ async def announcement_error(interaction: discord.Interaction, error: app_comman
             "❌ You must be an administrator to use this command.",
             ephemeral=True
         )
-        
+
+
+# ----------------------------
+# MESSAGE AUTO
+# ----------------------------
+
+IDLE_TIMEOUT = 300  # 5 minutes
+
+IDLE_CHANNEL_MESSAGES = {
+    "goon-room": (
+        "✨Welcome to the Goon Room ✨\n"
+        "Feel free to send your most triggering content 💗\n"
+        "Make sure everyone get triggered~"
+    ),
+    "perfect-brats": (
+        "👑Welcome to the Perfect Brats place 👑\n"
+        "Show us your favorite girls to goon to 🥵\n"
+        "Make everyone here a total simp~"
+    )
+}
+
+idle_tasks = {}
+idle_message_ids = {}
+
+async def delete_idle_message(channel: discord.TextChannel):
+    message_id = idle_message_ids.pop(channel.id, None)
+    if not message_id:
+        return
+
+    try:
+        message = await channel.fetch_message(message_id)
+        await message.delete()
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        pass
+
+
+async def idle_channel_worker(channel: discord.TextChannel):
+    try:
+        await asyncio.sleep(IDLE_TIMEOUT)
+
+        if channel.name not in IDLE_CHANNEL_MESSAGES:
+            return
+
+        sent_message = await channel.send(IDLE_CHANNEL_MESSAGES[channel.name])
+        idle_message_ids[channel.id] = sent_message.id
+
+    except asyncio.CancelledError:
+        pass
+
+
+def restart_idle_timer(channel: discord.TextChannel):
+    existing_task = idle_tasks.get(channel.id)
+    if existing_task:
+        existing_task.cancel()
+
+    idle_tasks[channel.id] = asyncio.create_task(idle_channel_worker(channel))
+
+async def start_idle_system():
+    await bot.wait_until_ready()
+
+    for guild in bot.guilds:
+        for channel_name in IDLE_CHANNEL_MESSAGES:
+            channel = discord.utils.get(guild.text_channels, name=channel_name)
+            if channel:
+                restart_idle_timer(channel)
+            else:
+                print(f"⚠️ Idle channel #{channel_name} not found in guild {guild.name}")
+
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
+
+    if isinstance(message.channel, discord.TextChannel):
+        if message.channel.name in IDLE_CHANNEL_MESSAGES:
+            await delete_idle_message(message.channel)
+            restart_idle_timer(message.channel)
+
+    await bot.process_commands(message)
+
 bot.run(TOKEN)
